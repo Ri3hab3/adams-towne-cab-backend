@@ -1,0 +1,28 @@
+{
+  "name": "adams-towne-cab-backend",
+  "version": "1.0.0",
+  "description": "Backend for Adams' Towne Car & Limo dispatch — Clover, OneDrive, Resend, Google Calendar integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "calendar-sync": "node scripts/calendar-sync.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "axios": "^1.7.7",
+    "exceljs": "^4.4.0",
+    "multer": "^1.4.5-lts.1",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
+    "@azure/identity": "^4.4.1",
+    "googleapis": "^144.0.0",
+    "resend": "^4.0.0",
+    "node-cron": "^3.0.3",
+    "isomorphic-fetch": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
