@@ -401,8 +401,7 @@ app.get('/api/clover/search', async (req, res) => {
 
 /**
  * Charge by Clover customer ID using Ecommerce API.
- * Uses /v1/charges endpoint (correct for remote card-on-file charging).
- * supportsMultiPayToken: true confirmed on this merchant account.
+ * Card tokenType is MULTIPAY — card.id is the multi-pay token used as source.
  */
 app.post('/api/clover/charge-by-id', async (req, res) => {
   const { cloverCustomerId, amount, description } = req.body;
@@ -413,20 +412,23 @@ app.post('/api/clover/charge-by-id', async (req, res) => {
   const API_TOKEN = process.env.CLOVER_API_TOKEN;
   const MERCHANT_ID = process.env.CLOVER_MERCHANT_ID;
   const CLOVER_ENV = process.env.CLOVER_ENV || 'sandbox';
+  const ECOMM_PRIVATE_TOKEN = process.env.CLOVER_ECOMM_PRIVATE_TOKEN;
   if (!API_TOKEN || !MERCHANT_ID) {
     return res.status(400).json({ ok: false, error: 'Clover not configured' });
   }
+  if (!ECOMM_PRIVATE_TOKEN) {
+    return res.status(400).json({ ok: false, error: 'CLOVER_ECOMM_PRIVATE_TOKEN not configured' });
+  }
 
-  // Ecommerce API uses a different base URL
   const ECOMM_URL = CLOVER_ENV === 'production'
     ? 'https://scl.clover.com'
     : 'https://scl-sandbox.dev.clover.com';
 
-  const restHttp = cloverHttp(); // for customer lookup (REST API)
+  const restHttp = cloverHttp();
   const ecHttp = axios.create({
     baseURL: ECOMM_URL,
     headers: {
-      'Authorization': `Bearer ${API_TOKEN}`,
+      'Authorization': `Bearer ${ECOMM_PRIVATE_TOKEN}`,
       'Content-Type': 'application/json',
     },
     timeout: 30000,
@@ -434,7 +436,7 @@ app.post('/api/clover/charge-by-id', async (req, res) => {
   });
 
   try {
-    // Step 1: Get customer's saved card token via REST API
+    // Step 1: Get customer's card via REST API
     const custRes = await restHttp.get(`/customers/${cloverCustomerId}`, {
       params: { expand: 'cards' },
     });
@@ -447,17 +449,14 @@ app.post('/api/clover/charge-by-id', async (req, res) => {
       return res.json({ ok: false, error: 'No card on file for this customer' });
     }
 
-    // Use the card token (multi-pay token for card-on-file charging)
+    // card.id IS the MULTIPAY token — use it directly as source
     const card = cards[0];
-    const cardSource = card.token || card.id;
-    if (!cardSource) {
-      return res.json({ ok: false, error: 'Card found but no token available. Card may not be set up for remote charging.' });
-    }
+    const cardSource = card.id;
 
     const amountCents = Math.round(parseFloat(amount) * 100);
     const desc = description || `Adams' Towne Car & Limo`;
 
-    // Step 2: Charge via Ecommerce API /v1/charges
+    // Step 2: Charge via Ecommerce API using MULTIPAY token as source
     const chargeRes = await ecHttp.post('/v1/charges', {
       amount: amountCents,
       currency: 'usd',
@@ -470,6 +469,8 @@ app.post('/api/clover/charge-by-id', async (req, res) => {
         is_scheduled: false,
       },
     });
+
+    console.log('Ecommerce charge response:', chargeRes.status, JSON.stringify(chargeRes.data).slice(0, 300));
 
     if (chargeRes.status >= 400) {
       throw new Error(`Charge failed (${chargeRes.status}): ${JSON.stringify(chargeRes.data).slice(0, 300)}`);
@@ -629,7 +630,8 @@ app.post('/api/invoices/charge', async (req, res) => {
       return res.json({ ok: false, error: 'No card on file in Clover for this customer' });
     }
     const card = cards[0];
-    const cardSource = card.token || card.id;
+    // card.id IS the MULTIPAY token for remote charging
+    const cardSource = card.id;
     if (!cardSource) {
       return res.json({ ok: false, error: 'Card found but no token available for remote charging.' });
     }
@@ -643,7 +645,7 @@ app.post('/api/invoices/charge', async (req, res) => {
 
     const ecHttp = axios.create({
       baseURL: ECOMM_URL,
-      headers: { Authorization: `Bearer ${API_TOKEN}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${process.env.CLOVER_ECOMM_PRIVATE_TOKEN}`, 'Content-Type': 'application/json' },
       timeout: 30000,
       validateStatus: () => true,
     });
